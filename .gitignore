@@ -1,0 +1,8 @@
+clang/
+out/
+KernelSU-Next/
+*.log
+*.zip
+*.diff
+*.patch
+

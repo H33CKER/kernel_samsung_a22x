@@ -16,7 +16,7 @@ KERNEL_DEFCONFIG=a22x_defconfig
 LOG_FILE="$SRC/build.log"
 COMPILATION_LOG="$SRC/compilation.log"
 FINAL_KERNEL_ZIP="$DEVICE-$BRANCH-$(date +%Y%m%d-%H%M).zip"
-TOOLCHAIN_DIR="$SRC/toolchain"
+TOOLCHAIN_DIR="$SRC"
 OUT_IMG="$SRC/out/arch/arm64/boot/Image.gz"
 
 # Define architecture
@@ -77,15 +77,11 @@ set_toolchain() {
     # Check if toolchain exists, if not clone it
     if [ ! -d "$TOOLCHAIN_DIR" ]; then
         log "$red Toolchain not found in $TOOLCHAIN_DIR, cloning...$nocol"
-        git clone --depth=1 https://gitlab.com/neel0210/toolchain.git "$TOOLCHAIN_DIR"
+        git clone --depth=1 https://gitlab.com/LeCmnGend/clang.git -b clang-15 "$TOOLCHAIN_DIR"
     else
         log "$green Toolchain found at $TOOLCHAIN_DIR $nocol"
     fi
 
-    # Set GCC, Clang, and Clang Triple paths
-    GCC64_PATH="$TOOLCHAIN_DIR/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin/aarch64-linux-android-"
-    CLANG_PATH="$TOOLCHAIN_DIR/clang/host/linux-x86/clang-r383902/bin/clang"
-    CLANG_TRIPLE_PATH="$TOOLCHAIN_DIR/clang/host/linux-x86/clang-r383902/bin/aarch64-linux-gnu-"
 }
 
 # Function to perform clean build
@@ -143,9 +139,6 @@ build_kernel() {
     # Build kernel with output logging
     if ! make -j$(nproc --all) O=out \
         ARCH="$ARCH" \
-        CC="$CLANG_PATH" \
-        CLANG_TRIPLE="$CLANG_TRIPLE_PATH" \
-        CROSS_COMPILE="$GCC64_PATH" \
         CONFIG_NO_ERROR_ON_MISMATCH=y 2>&1 | tee -a "$COMPILATION_LOG"; then
         log "$red Kernel compilation failed! $nocol"
         send_logs_and_exit
