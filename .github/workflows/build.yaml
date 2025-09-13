@@ -1,0 +1,32 @@
+name: A226B-BUILDER
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "checkout branch"
+        required: true
+        default: "main"
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch }}
+
+      - name: Setup environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git curl wget make zip python3
+
+      - name: Run build.sh
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+        run: |
+          chmod +x build.sh
+          ./build.sh
