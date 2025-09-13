@@ -16,7 +16,7 @@ KERNEL_DEFCONFIG=a22x_defconfig
 LOG_FILE="$SRC/build.log"
 COMPILATION_LOG="$SRC/compilation.log"
 FINAL_KERNEL_ZIP="$DEVICE-$BRANCH-$(date +%Y%m%d-%H%M).zip"
-TOOLCHAIN_DIR="$SRC"
+TOOLCHAIN_DIR="$SRC/clang"
 OUT_IMG="$SRC/out/arch/arm64/boot/Image.gz"
 
 # Define architecture
