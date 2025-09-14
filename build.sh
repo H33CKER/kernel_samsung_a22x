@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Script version
-SCRIPT_VERSION="1.3"
+SCRIPT_VERSION="1.4"
 
 set -e
 
@@ -40,7 +40,7 @@ nocol='\033[0m'
 check_ksu() {
     if [ ! -d "$SRC/KernelSU-Next" ]; then
 	log "$red KernelSU not found in $SRC/KernelSU-Next, Cloning...$nocol"
-	curl -LSs "https://raw.githubusercontent.com/sidex15/KernelSU-Next/refs/heads/next-susfs/kernel/setup.sh" | bash -s next-susfs
+	curl -LSs "https://raw.githubusercontent.com/makruf1954/KernelSU-Next/refs/heads/next-susfs/kernel/setup.sh" | bash -s next-susfs
     else
 	log "$green KernelSU already $nocol"
     fi
