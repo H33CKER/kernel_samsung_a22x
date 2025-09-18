@@ -1,32 +1,35 @@
-name: A226B-BUILDER
+name: A226B-BUILD
 
 on:
   workflow_dispatch:
-    inputs:
-      branch:
-        description: "checkout branch"
-        required: true
-        default: "main"
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
 
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.inputs.branch }}
+      - name: Checkout Kernel Source
+        uses: actions/checkout@v3
 
-      - name: Setup environment
+      - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y git curl wget make zip python3
-
+          sudo apt-get install -y \
+            bc bison build-essential ccache curl flex gcc gcc-aarch64-linux-gnu \
+            git gnupg gperf libncurses5-dev libssl-dev \
+            lld llvm make python3 rsync unzip wget zip zlib1g-dev
       - name: Run build.sh
-        env:
-          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          CHAT_ID: ${{ secrets.CHAT_ID }}
         run: |
           chmod +x build.sh
           ./build.sh
+    
+      - name: Upload in telegram
+        run: |
+           chmod +x tg.sh
+           ./tg.sh
+           
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kernel
+          path: AnyKernel3*.zip
