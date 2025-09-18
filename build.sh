@@ -153,16 +153,22 @@ build_kernel() {
         send_logs_and_exit
     fi
     
-	# Build kernel with Clang
-	if ! make -j$(nproc) O=out \
-	    ARCH="$ARCH" \
-	    CC=clang \
-	    CROSS_COMPILE=$CROSS_COMPILE \
-	    CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 \
-	    CONFIG_NO_ERROR_ON_MISMATCH=y 2>&1 | tee -a "$COMPILATION_LOG"; then
-	    log "$red Kernel compilation failed! $nocol"
-	    send_logs_and_exit
-	fi
+    # Build kernel with Clang + LLVM tools
+    if ! make -j$(nproc) O=out \
+        ARCH="$ARCH" \
+        CC=clang \
+        LD=ld.lld \
+        AR=llvm-ar \
+        NM=llvm-nm \
+        OBJDUMP=llvm-objdump \
+        STRIP=llvm-strip \
+        OBJCOPY=llvm-objcopy \
+        CROSS_COMPILE= \
+        CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 \
+        CONFIG_NO_ERROR_ON_MISMATCH=y 2>&1 | tee -a "$COMPILATION_LOG"; then
+        log "$red Kernel compilation failed! $nocol"
+        send_logs_and_exit
+    fi
 
     # Check if kernel image was created
     if [ ! -f "$OUT_IMG" ]; then
@@ -172,6 +178,7 @@ build_kernel() {
     
     log "$green Kernel build completed successfully! $nocol"
 }
+
 
 # Function to zip kernel files
 zip_kernel_files() {
