@@ -1,8 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /* Copyright (c) 2017 Facebook
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of version 2 of the GNU General Public
- * License as published by the Free Software Foundation.
  */
 #include <linux/slab.h>
 #include <linux/bpf.h>
@@ -20,11 +17,13 @@ struct bpf_map *bpf_map_meta_alloc(int inner_map_ufd)
 	if (IS_ERR(inner_map))
 		return inner_map;
 
-	/* prog_array->owner_prog_type and owner_jited
-	 * is a runtime binding.  Doing static check alone
-	 * in the verifier is not enough.
+	/* prog_array->aux->{type,jited} is a runtime binding.
+	 * Doing static check alone in the verifier is not enough.
 	 */
-	if (inner_map->map_type == BPF_MAP_TYPE_PROG_ARRAY) {
+	if (inner_map->map_type == BPF_MAP_TYPE_PROG_ARRAY ||
+	    inner_map->map_type == BPF_MAP_TYPE_CGROUP_STORAGE ||
+	    inner_map->map_type == BPF_MAP_TYPE_PERCPU_CGROUP_STORAGE ||
+	    inner_map->map_type == BPF_MAP_TYPE_STRUCT_OPS) {
 		fdput(f);
 		return ERR_PTR(-ENOTSUPP);
 	}
@@ -51,6 +50,7 @@ struct bpf_map *bpf_map_meta_alloc(int inner_map_ufd)
 	inner_map_meta->value_size = inner_map->value_size;
 	inner_map_meta->map_flags = inner_map->map_flags;
 	inner_map_meta->max_entries = inner_map->max_entries;
+	inner_map_meta->spin_lock_off = inner_map->spin_lock_off;
 
 	/* Misc members not needed in bpf_map_meta_equal() check. */
 	inner_map_meta->ops = inner_map->ops;
@@ -93,7 +93,7 @@ void *bpf_map_fd_get_ptr(struct bpf_map *map,
 		return inner_map;
 
 	if (bpf_map_meta_equal(map->inner_map_meta, inner_map))
-		inner_map = bpf_map_inc(inner_map, false);
+		bpf_map_inc(inner_map);
 	else
 		inner_map = ERR_PTR(-EINVAL);
 

@@ -3573,7 +3573,9 @@ static int cgroup_add_file(struct cgroup_subsys_state *css, struct cgroup *cgrp,
 	key = &cft->lockdep_key;
 #endif
 	kn = __kernfs_create_file(cgrp->kn, cgroup_file_name(cgrp, cft, name),
-				  cgroup_file_mode(cft), 0, cft->kf_ops, cft,
+				  cgroup_file_mode(cft),
+				  GLOBAL_ROOT_UID, GLOBAL_ROOT_GID,
+				  0, cft->kf_ops, cft,
 				  NULL, key);
 	if (IS_ERR(kn))
 		return PTR_ERR(kn);
@@ -4735,8 +4737,6 @@ static void css_release_work_fn(struct work_struct *work)
 		if (cgrp->kn)
 			RCU_INIT_POINTER(*(void __rcu __force **)&cgrp->kn->priv,
 					 NULL);
-
-		cgroup_bpf_put(cgrp);
 	}
 
 	mutex_unlock(&cgroup_mutex);
@@ -5224,6 +5224,8 @@ static int cgroup_destroy_locked(struct cgroup *cgrp)
 
 	cgroup1_check_for_release(parent);
 
+	cgroup_bpf_offline(cgrp);
+
 	/* put the base reference */
 	percpu_ref_kill(&cgrp->self.refcnt);
 
@@ -5472,8 +5474,7 @@ static int __init cgroup_wq_init(void)
 }
 core_initcall(cgroup_wq_init);
 
-void cgroup_path_from_kernfs_id(const union kernfs_node_id *id,
-					char *buf, size_t buflen)
+void cgroup_path_from_kernfs_id(u64 id, char *buf, size_t buflen)
 {
 	struct kernfs_node *kn;
 
@@ -5941,6 +5942,7 @@ void cgroup_sk_alloc(struct sock_cgroup_data *skcd)
 		cset = task_css_set(current);
 		if (likely(cgroup_tryget(cset->dfl_cgrp))) {
 			skcd->val = (unsigned long)cset->dfl_cgrp;
+			cgroup_bpf_get(cset->dfl_cgrp);
 			break;
 		}
 		cpu_relax();
@@ -5966,22 +5968,25 @@ void cgroup_sk_clone(struct sock_cgroup_data *skcd)
 
 void cgroup_sk_free(struct sock_cgroup_data *skcd)
 {
+	struct cgroup *cgrp = sock_cgroup_ptr(skcd);
+
 	if (skcd->no_refcnt)
 		return;
-
-	cgroup_put(sock_cgroup_ptr(skcd));
+	cgroup_bpf_put(cgrp);
+	cgroup_put(cgrp);
 }
 
 #endif	/* CONFIG_SOCK_CGROUP_DATA */
 
 #ifdef CONFIG_CGROUP_BPF
 int cgroup_bpf_attach(struct cgroup *cgrp, struct bpf_prog *prog,
-		      enum bpf_attach_type type, u32 flags)
+		      struct bpf_prog *replace_prog, enum bpf_attach_type type,
+		      u32 flags)
 {
 	int ret;
 
 	mutex_lock(&cgroup_mutex);
-	ret = __cgroup_bpf_attach(cgrp, prog, type, flags);
+	ret = __cgroup_bpf_attach(cgrp, prog, replace_prog, type, flags);
 	mutex_unlock(&cgroup_mutex);
 	return ret;
 }
@@ -5991,7 +5996,7 @@ int cgroup_bpf_detach(struct cgroup *cgrp, struct bpf_prog *prog,
 	int ret;
 
 	mutex_lock(&cgroup_mutex);
-	ret = __cgroup_bpf_detach(cgrp, prog, type, flags);
+	ret = __cgroup_bpf_detach(cgrp, prog, type);
 	mutex_unlock(&cgroup_mutex);
 	return ret;
 }

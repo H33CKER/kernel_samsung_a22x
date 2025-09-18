@@ -47,7 +47,6 @@ struct rcu_node;
 struct reclaim_state;
 struct robust_list_head;
 struct sched_attr;
-struct sched_param;
 struct seq_file;
 struct sighand_struct;
 struct signal_struct;
@@ -221,10 +220,6 @@ extern void scheduler_tick(void);
 
 #define	MAX_SCHEDULE_TIMEOUT		LONG_MAX
 
-#ifdef CONFIG_DEBUG_PREEMPT
-#define PREEMPT_DISABLE_DEEPTH 5
-#endif
-
 extern long schedule_timeout(long timeout);
 extern long schedule_timeout_interruptible(long timeout);
 extern long schedule_timeout_killable(long timeout);
@@ -294,12 +289,8 @@ struct vtime {
 	u64			gtime;
 };
 
-enum uclamp_id {
-	UCLAMP_MIN = 0, /* Minimum utilization */
-	UCLAMP_MAX,     /* Maximum utilization */
-
-	/* Utilization clamping constraints count */
-	UCLAMP_CNT
+struct sched_param {
+	int sched_priority;
 };
 
 struct sched_info {
@@ -333,32 +324,6 @@ struct sched_info {
 # define SCHED_FIXEDPOINT_SHIFT		10
 # define SCHED_FIXEDPOINT_SCALE		(1L << SCHED_FIXEDPOINT_SHIFT)
 
-/*
- * Increase resolution of cpu_capacity calculations
- */
-# define SCHED_CAPACITY_SHIFT		SCHED_FIXEDPOINT_SHIFT
-# define SCHED_CAPACITY_SCALE		(1L << SCHED_CAPACITY_SHIFT)
-
-static inline unsigned int scale_from_percent(unsigned int pct)
-{
-	WARN_ON(pct > 100);
-
-	return ((SCHED_FIXEDPOINT_SCALE * pct) / 100);
-}
-
-static inline unsigned int scale_to_percent(unsigned int value)
-{
-	unsigned int rounding = 0;
-
-	WARN_ON(value > SCHED_FIXEDPOINT_SCALE);
-
-	/* Compensate rounding errors for: 0, 256, 512, 768, 1024 */
-	if (likely((value & 0xFF) && ~(value & 0x700)))
-		rounding = 1;
-
-	return (rounding + ((100 * value) / SCHED_FIXEDPOINT_SCALE));
-}
-
 struct load_weight {
 	unsigned long			weight;
 	u32				inv_weight;
@@ -390,7 +355,7 @@ struct util_est {
 	unsigned int			enqueued;
 	unsigned int			ewma;
 #define UTIL_EST_WEIGHT_SHIFT		2
-};
+} __attribute__((__aligned__(sizeof(u64))));
 
 /*
  * The load_avg/util_avg accumulates an infinite geometric series
@@ -452,16 +417,7 @@ struct sched_avg {
 	unsigned long			load_avg;
 	unsigned long			util_avg;
 	struct util_est			util_est;
-	unsigned long loadwop_avg, loadwop_sum;
-#ifdef CONFIG_SCHED_HMP
-	unsigned long pending_load;
-	u32 nr_pending;
-	u32 nr_dequeuing_low_prio;
-	u32 nr_normal_prio;
-	u64 hmp_last_up_migration;
-	u64 hmp_last_down_migration;
-#endif /* CONFIG_SCHED_HMP */
-};
+} ____cacheline_aligned;
 
 struct sched_statistics {
 #ifdef CONFIG_SCHEDSTATS
@@ -509,16 +465,6 @@ struct sched_entity {
 	u64				exec_start;
 	u64				sum_exec_runtime;
 	u64				vruntime;
-#ifdef CONFIG_SCHED_HMP
-	unsigned long pending_load;
-	u32 nr_pending;
-#ifdef CONFIG_SCHED_HMP_PRIO_FILTER
-	u32 nr_dequeuing_low_prio;
-	u32 nr_normal_prio;
-#endif
-	u64 hmp_last_up_migration;
-	u64 hmp_last_down_migration;
-#endif /* CONFIG_SCHED_HMP */
 	u64				prev_sum_exec_runtime;
 
 	u64				nr_migrations;
@@ -541,11 +487,7 @@ struct sched_entity {
 	 * Put into separate cache line so it does not
 	 * collide with read-mostly values above.
 	 */
-	struct sched_avg		avg ____cacheline_aligned_in_smp;
-#endif
-
-#ifdef CONFIG_MTK_RT_THROTTLE_MON
-	u64			mtk_isr_time;
+	struct sched_avg		avg;
 #endif
 };
 
@@ -667,62 +609,6 @@ struct sched_dl_entity {
 	struct hrtimer inactive_timer;
 };
 
-#ifdef CONFIG_UCLAMP_TASK
-/*
- * Number of utiliation clamp groups
- *
- * The first clamp group (group_id=0) is used to track non clamped tasks, i.e.
- * util_{min,max} (0,SCHED_CAPACITY_SCALE). Thus we allocate one more group in
- * addition to the configured number.
- */
-#define UCLAMP_GROUPS (CONFIG_UCLAMP_GROUPS_COUNT + 1)
-
-/**
- * Utilization clamp group
- *
- * A utilization clamp group maps a:
- *   clamp value (value), i.e.
- *   util_{min,max} value requested from userspace
- * to a:
- *   clamp group index (group_id), i.e.
- *   index of the per-cpu RUNNABLE tasks refcounting array
- *
- * The mapped bit is set whenever a scheduling entity has been mapped on a
- * clamp group for the first time. When this bit is set, any clamp group get
- * (for a new clamp value) will be matches by a clamp group put (for the old
- * clamp value).
- *
- * The user_defined bit is set whenever a task has got a task-specific clamp
- * value requested from userspace, i.e. the system defaults applies to this
- * task just as a restriction. This allows to relax TG's clamps when a less
- * restrictive task specific value has been defined, thus allowing to
- * implement a "nice" semantic when both task group and task specific values
- * are used. For example, a task running on a 20% boosted TG can still drop
- * its own boosting to 0%.
- */
-struct uclamp_se {
-	unsigned int value;
-	unsigned int group_id;
-	unsigned int mapped;
-	unsigned int active;
-	unsigned int user_defined;
-	/*
-	 * Clamp group and value actually used by a scheduling entity,
-	 * i.e. a (RUNNABLE) task or a task group.
-	 * For task groups, this is the value (eventually) enforced by a
-	 * parent task group.
-	 * For a task, this is the value (eventually) enforced by the
-	 * task group the task is currently part of or by the system
-	 * default clamp values, whichever is the most restrictive.
-	 */
-	struct {
-		unsigned int value	: SCHED_CAPACITY_SHIFT + 1;
-		unsigned int group_id	: order_base_2(UCLAMP_GROUPS);
-	} effective;
-};
-#endif /* CONFIG_UCLAMP_TASK */
-
-
 union rcu_special {
 	struct {
 		u8			blocked;
@@ -783,9 +669,6 @@ struct task_struct {
 	int				wake_cpu;
 #endif
 	int				on_rq;
-#ifdef CONFIG_MTK_SCHED_BOOST
-	int				cpu_prefer;
-#endif
 
 	int				prio;
 	int				static_prio;
@@ -804,17 +687,11 @@ struct task_struct {
 	u32 init_load_pct;
 	u64 last_sleep_ts;
 #endif
-	u64 last_enqueued_ts;
 
 #ifdef CONFIG_CGROUP_SCHED
 	struct task_group		*sched_task_group;
 #endif
 	struct sched_dl_entity		dl;
-
-#ifdef CONFIG_UCLAMP_TASK
-	/* Utlization clamp values for this task */
-	struct uclamp_se		uclamp[UCLAMP_CNT];
-#endif
 
 #ifdef CONFIG_PREEMPT_NOTIFIERS
 	/* List of struct preempt_notifier: */
@@ -946,7 +823,8 @@ struct task_struct {
 	struct list_head		ptrace_entry;
 
 	/* PID/PID hash table linkage. */
-	struct pid_link			pids[PIDTYPE_MAX];
+	struct pid			*thread_pid;
+	struct hlist_node		pid_links[PIDTYPE_MAX];
 	struct list_head		thread_group;
 	struct list_head		thread_node;
 
@@ -990,15 +868,6 @@ struct task_struct {
 	/* MM fault and swap info: this can arguably be seen as either mm-specific or thread-specific: */
 	unsigned long			min_flt;
 	unsigned long			maj_flt;
-
-#ifdef CONFIG_MTK_MLOG
-	/* Page-in/out accounting for filemap fault and swap */
-	unsigned long			fm_flt;
-#ifdef CONFIG_SWAP
-	unsigned long			swap_in;
-	unsigned long			swap_out;
-#endif
-#endif
 
 #ifdef CONFIG_POSIX_TIMERS
 	struct task_cputime		cputime_expires;
@@ -1107,7 +976,7 @@ struct task_struct {
 #endif
 
 #ifdef CONFIG_LOCKDEP
-# define MAX_LOCK_DEPTH			32UL
+# define MAX_LOCK_DEPTH			48UL
 	u64				curr_chain_key;
 	int				lockdep_depth;
 	unsigned int			lockdep_recursion;
@@ -1199,7 +1068,6 @@ struct task_struct {
 #endif
 #ifdef CONFIG_DEBUG_PREEMPT
 	unsigned long			preempt_disable_ip;
-	unsigned long preempt_disable_ips[PREEMPT_DISABLE_DEEPTH];
 #endif
 #ifdef CONFIG_NUMA
 	/* Protected by alloc_lock: */
@@ -1378,22 +1246,11 @@ struct task_struct {
 	/* Used by LSM modules for access restriction: */
 	void				*security;
 #endif
-#ifdef CONFIG_MTK_TASK_TURBO
-	unsigned short turbo:1;
-	unsigned short render:1;
-	unsigned short inherit_cnt:14;
-	short nice_backup;
-	atomic_t inherit_types;
-#endif
 
 	/*
 	 * New fields for task_struct should be added above here, so that
 	 * they are included in the randomized portion of task_struct.
 	 */
-#ifdef CONFIG_KSU_SUSFS
-	u64 susfs_task_state;
-	u64 susfs_last_fake_mnt_id;
-#endif
 	randomized_struct_fields_end
 
 	/* CPU-specific state of this task: */
@@ -1409,27 +1266,7 @@ struct task_struct {
 
 static inline struct pid *task_pid(struct task_struct *task)
 {
-	return task->pids[PIDTYPE_PID].pid;
-}
-
-static inline struct pid *task_tgid(struct task_struct *task)
-{
-	return task->group_leader->pids[PIDTYPE_PID].pid;
-}
-
-/*
- * Without tasklist or RCU lock it is not safe to dereference
- * the result of task_pgrp/task_session even if task == current,
- * we can race with another thread doing sys_setsid/sys_setpgid.
- */
-static inline struct pid *task_pgrp(struct task_struct *task)
-{
-	return task->group_leader->pids[PIDTYPE_PGID].pid;
-}
-
-static inline struct pid *task_session(struct task_struct *task)
-{
-	return task->group_leader->pids[PIDTYPE_SID].pid;
+	return task->thread_pid;
 }
 
 /*
@@ -1478,7 +1315,7 @@ static inline pid_t task_tgid_nr(struct task_struct *tsk)
  */
 static inline int pid_alive(const struct task_struct *p)
 {
-	return p->pids[PIDTYPE_PID].pid != NULL;
+	return p->thread_pid != NULL;
 }
 
 static inline pid_t task_pgrp_nr_ns(struct task_struct *tsk, struct pid_namespace *ns)
@@ -1504,12 +1341,12 @@ static inline pid_t task_session_vnr(struct task_struct *tsk)
 
 static inline pid_t task_tgid_nr_ns(struct task_struct *tsk, struct pid_namespace *ns)
 {
-	return __task_pid_nr_ns(tsk, __PIDTYPE_TGID, ns);
+	return __task_pid_nr_ns(tsk, PIDTYPE_TGID, ns);
 }
 
 static inline pid_t task_tgid_vnr(struct task_struct *tsk)
 {
-	return __task_pid_nr_ns(tsk, __PIDTYPE_TGID, NULL);
+	return __task_pid_nr_ns(tsk, PIDTYPE_TGID, NULL);
 }
 
 static inline pid_t task_ppid_nr_ns(const struct task_struct *tsk, struct pid_namespace *ns)
@@ -1596,7 +1433,6 @@ extern struct pid *cad_pid;
 #define PF_MEMALLOC		0x00000800	/* Allocating memory */
 #define PF_NPROC_EXCEEDED	0x00001000	/* set_user() noticed that RLIMIT_NPROC was exceeded */
 #define PF_USED_MATH		0x00002000	/* If unset the fpu must be initialized before use */
-#define PF_USED_ASYNC		0x00004000	/* Used async_schedule*(), used by module init */
 #define PF_NOFREEZE		0x00008000	/* This thread should not be frozen */
 #define PF_FROZEN		0x00010000	/* Frozen for system suspend */
 #define PF_KSWAPD		0x00020000	/* I am kswapd */
@@ -1607,6 +1443,7 @@ extern struct pid *cad_pid;
 #define PF_RANDOMIZE		0x00400000	/* Randomize virtual address space */
 #define PF_SWAPWRITE		0x00800000	/* Allowed to write to swap */
 #define PF_MEMSTALL		0x01000000	/* Stalled due to lack of memory */
+#define PF_UMH			0x02000000	/* I'm an Usermodehelper process */
 #define PF_NO_SETAFFINITY	0x04000000	/* Userland is not allowed to meddle with cpus_allowed */
 #define PF_MCE_EARLY		0x08000000      /* Early kill for mce process policy */
 #define PF_MUTEX_TESTER		0x20000000	/* Thread belongs to the rt mutex tester */
@@ -1641,7 +1478,7 @@ extern struct pid *cad_pid;
 #define tsk_used_math(p)			((p)->flags & PF_USED_MATH)
 #define used_math()				tsk_used_math(current)
 
-static inline bool is_percpu_thread(void)
+static __always_inline bool is_percpu_thread(void)
 {
 #ifdef CONFIG_SMP
 	return (current->flags & PF_NO_SETAFFINITY) &&
@@ -1745,7 +1582,11 @@ extern int task_curr(const struct task_struct *p);
 extern int idle_cpu(int cpu);
 extern int sched_setscheduler(struct task_struct *, int, const struct sched_param *);
 extern int sched_setscheduler_nocheck(struct task_struct *, int, const struct sched_param *);
+extern int sched_set_fifo(struct task_struct *p);
+extern int sched_set_fifo_low(struct task_struct *p);
+extern int sched_set_normal(struct task_struct *p, int nice);
 extern int sched_setattr(struct task_struct *, const struct sched_attr *);
+extern int sched_setattr_nocheck(struct task_struct *, const struct sched_attr *);
 extern struct task_struct *idle_task(int cpu);
 
 /**
@@ -1765,11 +1606,20 @@ extern void ia64_set_curr_task(int cpu, struct task_struct *p);
 void yield(void);
 
 union thread_union {
+#ifndef CONFIG_ARCH_TASK_STRUCT_ON_STACK
+	struct task_struct task;
+#endif
 #ifndef CONFIG_THREAD_INFO_IN_TASK
 	struct thread_info thread_info;
 #endif
 	unsigned long stack[THREAD_SIZE/sizeof(long)];
 };
+
+#ifndef CONFIG_THREAD_INFO_IN_TASK
+extern struct thread_info init_thread_info;
+#endif
+
+extern unsigned long init_stack[THREAD_SIZE / sizeof(unsigned long)];
 
 #ifdef CONFIG_THREAD_INFO_IN_TASK
 static inline struct thread_info *task_thread_info(struct task_struct *task)
@@ -1986,9 +1836,12 @@ extern long sched_getaffinity(pid_t pid, struct cpumask *mask);
 #define TASK_SIZE_OF(tsk)	TASK_SIZE
 #endif
 
-#include <linux/sched/sched.h>
-#endif
+void __exit_umh(struct task_struct *tsk);
 
-#ifdef CONFIG_SCHED_TUNE
-extern int set_stune_task_threshold(int threshold);
+static inline void exit_umh(struct task_struct *tsk)
+{
+	if (unlikely(tsk->flags & PF_UMH))
+		__exit_umh(tsk);
+}
+
 #endif

@@ -15,6 +15,7 @@
 #include <linux/lockdep.h>
 #include <linux/rbtree.h>
 #include <linux/atomic.h>
+#include <linux/uidgid.h>
 #include <linux/wait.h>
 
 struct file;
@@ -102,21 +103,6 @@ struct kernfs_elem_attr {
 	struct kernfs_node	*notify_next;	/* for kernfs_notify() */
 };
 
-/* represent a kernfs node */
-union kernfs_node_id {
-	struct {
-		/*
-		 * blktrace will export this struct as a simplified 'struct
-		 * fid' (which is a big data struction), so userspace can use
-		 * it to find kernfs node. The layout must match the first two
-		 * fields of 'struct fid' exactly.
-		 */
-		u32		ino;
-		u32		generation;
-	};
-	u64			id;
-};
-
 /*
  * kernfs_node - the building block of kernfs hierarchy.  Each and every
  * kernfs node is represented by single kernfs_node.  Most fields are
@@ -153,7 +139,12 @@ struct kernfs_node {
 
 	void			*priv;
 
-	union kernfs_node_id	id;
+	/*
+	 * 64bit unique ID.  Lower 32bits carry the inode number and lower
+	 * generation.
+	 */
+	u64			id;
+
 	unsigned short		flags;
 	umode_t			mode;
 	struct kernfs_iattrs	*iattr;
@@ -279,6 +270,26 @@ static inline enum kernfs_node_type kernfs_type(struct kernfs_node *kn)
 	return kn->flags & KERNFS_TYPE_MASK;
 }
 
+static inline ino_t kernfs_id_ino(u64 id)
+{
+	return (u32)id;
+}
+
+static inline u32 kernfs_id_gen(u64 id)
+{
+	return id >> 32;
+}
+
+static inline ino_t kernfs_ino(struct kernfs_node *kn)
+{
+	return kernfs_id_ino(kn->id);
+}
+
+static inline ino_t kernfs_gen(struct kernfs_node *kn)
+{
+	return kernfs_id_gen(kn->id);
+}
+
 /**
  * kernfs_enable_ns - enable namespace under a directory
  * @kn: directory of interest, should be empty
@@ -330,12 +341,14 @@ void kernfs_destroy_root(struct kernfs_root *root);
 
 struct kernfs_node *kernfs_create_dir_ns(struct kernfs_node *parent,
 					 const char *name, umode_t mode,
+					 kuid_t uid, kgid_t gid,
 					 void *priv, const void *ns);
 struct kernfs_node *kernfs_create_empty_dir(struct kernfs_node *parent,
 					    const char *name);
 struct kernfs_node *__kernfs_create_file(struct kernfs_node *parent,
-					 const char *name,
-					 umode_t mode, loff_t size,
+					 const char *name, umode_t mode,
+					 kuid_t uid, kgid_t gid,
+					 loff_t size,
 					 const struct kernfs_ops *ops,
 					 void *priv, const void *ns,
 					 struct lock_class_key *key);
@@ -365,8 +378,7 @@ struct super_block *kernfs_pin_sb(struct kernfs_root *root, const void *ns);
 
 void kernfs_init(void);
 
-struct kernfs_node *kernfs_get_node_by_id(struct kernfs_root *root,
-	const union kernfs_node_id *id);
+struct kernfs_node *kernfs_get_node_by_id(struct kernfs_root *root, u64 id);
 #else	/* CONFIG_KERNFS */
 
 static inline enum kernfs_node_type kernfs_type(struct kernfs_node *kn)
@@ -422,12 +434,14 @@ static inline void kernfs_destroy_root(struct kernfs_root *root) { }
 
 static inline struct kernfs_node *
 kernfs_create_dir_ns(struct kernfs_node *parent, const char *name,
-		     umode_t mode, void *priv, const void *ns)
+		     umode_t mode, kuid_t uid, kgid_t gid,
+		     void *priv, const void *ns)
 { return ERR_PTR(-ENOSYS); }
 
 static inline struct kernfs_node *
 __kernfs_create_file(struct kernfs_node *parent, const char *name,
-		     umode_t mode, loff_t size, const struct kernfs_ops *ops,
+		     umode_t mode, kuid_t uid, kgid_t gid,
+		     loff_t size, const struct kernfs_ops *ops,
 		     void *priv, const void *ns, struct lock_class_key *key)
 { return ERR_PTR(-ENOSYS); }
 
@@ -505,12 +519,15 @@ static inline struct kernfs_node *
 kernfs_create_dir(struct kernfs_node *parent, const char *name, umode_t mode,
 		  void *priv)
 {
-	return kernfs_create_dir_ns(parent, name, mode, priv, NULL);
+	return kernfs_create_dir_ns(parent, name, mode,
+				    GLOBAL_ROOT_UID, GLOBAL_ROOT_GID,
+				    priv, NULL);
 }
 
 static inline struct kernfs_node *
 kernfs_create_file_ns(struct kernfs_node *parent, const char *name,
-		      umode_t mode, loff_t size, const struct kernfs_ops *ops,
+		      umode_t mode, kuid_t uid, kgid_t gid,
+		      loff_t size, const struct kernfs_ops *ops,
 		      void *priv, const void *ns)
 {
 	struct lock_class_key *key = NULL;
@@ -518,15 +535,17 @@ kernfs_create_file_ns(struct kernfs_node *parent, const char *name,
 #ifdef CONFIG_DEBUG_LOCK_ALLOC
 	key = (struct lock_class_key *)&ops->lockdep_key;
 #endif
-	return __kernfs_create_file(parent, name, mode, size, ops, priv, ns,
-				    key);
+	return __kernfs_create_file(parent, name, mode, uid, gid,
+				    size, ops, priv, ns, key);
 }
 
 static inline struct kernfs_node *
 kernfs_create_file(struct kernfs_node *parent, const char *name, umode_t mode,
 		   loff_t size, const struct kernfs_ops *ops, void *priv)
 {
-	return kernfs_create_file_ns(parent, name, mode, size, ops, priv, NULL);
+	return kernfs_create_file_ns(parent, name, mode,
+				     GLOBAL_ROOT_UID, GLOBAL_ROOT_GID,
+				     size, ops, priv, NULL);
 }
 
 static inline int kernfs_remove_by_name(struct kernfs_node *parent,

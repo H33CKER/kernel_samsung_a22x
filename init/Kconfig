@@ -71,8 +71,7 @@ config CROSS_COMPILE
 
 config COMPILE_TEST
 	bool "Compile also drivers which will not load"
-	depends on !UML
-	default n
+	depends on HAS_IOMEM
 	help
 	  Some drivers can be compiled on a different platform than they are
 	  intended to be run on. Despite they cannot be loaded there (or even
@@ -288,19 +287,6 @@ config CROSS_MEMORY_ATTACH
 	  process_vm_writev which allow a process with the correct privileges
 	  to directly read from or write to another process' address space.
 	  See the man page for more details.
-
-config FHANDLE
-	bool "open by fhandle syscalls" if EXPERT
-	select EXPORTFS
-	default y
-	help
-	  If you say Y here, a user level program will be able to map
-	  file names to handle and then later use the handle for
-	  different file system operations. This is useful in implementing
-	  userspace file servers, which now track files using handles instead
-	  of names. The handle would remain the same even if file names
-	  get renamed. Enables open_by_handle_at(2) and name_to_handle_at(2)
-	  syscalls.
 
 config USELIB
 	bool "uselib syscall"
@@ -563,7 +549,8 @@ config IKHEADERS
 
 config LOG_BUF_SHIFT
 	int "Kernel log buffer size (16 => 64KB, 17 => 128KB)"
-	range 12 25
+	range 12 25 if !H8300
+	range 12 19 if H8300
 	default 17
 	depends on PRINTK
 	help
@@ -648,65 +635,6 @@ config HAVE_UNSTABLE_SCHED_CLOCK
 
 config GENERIC_SCHED_CLOCK
 	bool
-
-menu "Scheduler features"
-
-config UCLAMP_TASK
-	bool "Enable utilization clamping for RT/FAIR tasks"
-	depends on CPU_FREQ_GOV_SCHEDUTIL
-	default n
-	help
-	  This feature enables the scheduler to track the clamped utilization
-	  of each CPU based on RUNNABLE tasks currently scheduled on that CPU.
-
-	  When this option is enabled, the user can specify a min and max CPU
-          bandwidth which is allowed for a task.
-	  The max bandwidth allows to clamp the maximum frequency a task can
-	  use, while the min bandwidth allows to define a minimum frequency a
-          task will always use.
-
-	  If in doubt, say N.
-
-config UCLAMP_GROUPS_COUNT
-	int "Number of different utilization clamp values supported"
-	range 0 32
-	default 5
-	depends on UCLAMP_TASK
-	help
-	  This defines the maximum number of different utilization clamp
-	  values which can be concurrently enforced for each utilization
-	  clamp index (i.e. minimum and maximum utilization).
-
-	  Only a limited number of clamp values are supported because:
-	    1. there are usually only few classes of workloads for which it
-	       makes sense to boost/cap for different frequencies,
-	       e.g. background vs foreground, interactive vs low-priority.
-	    2. it allows a simpler and more memory/time efficient tracking of
-	       the per-CPU clamp values.
-
-	  If in doubt, use the default value.
-
-config UCLAMP_MAP_OPP
-	bool "Map utilization clamping to opp corresponding capacity"
-	depends on UCLAMP_TASK
-	depends on MTK_UNIFY_POWER
-	default n
-	help
-	  This feature map utilization clamping value to cpu opp capacity.
-
-	  If in doubt, say N.
-
-config NONLINEAR_FREQ_CTL
-	bool "Non-linear frequency control"
-	depends on MTK_CPU_FREQ
-	depends on MTK_UNIFY_POWER
-	default n
-	help
-	  Use power table capacity to control DVFS, cpu capacity/
-	  loading tracking/opp calculation will be affected.
-	  If unsure, say N.
-
-endmenu
 
 menu "FAIR Scheuler tunables"
 
@@ -838,11 +766,6 @@ config MEMCG_SWAP_ENABLED
 	  select this option (if, for some reason, they need to disable it
 	  then swapaccount=0 does the trick).
 
-config MEMCG_FORCE_USE_VM_SWAPPINESS
-	bool "Force to use vm_swappiness instead of memcg->swappiness"
-	depends on MEMCG_SWAP
-	default y
-
 config BLK_CGROUP
 	bool "IO controller"
 	depends on BLOCK
@@ -915,28 +838,6 @@ config RT_GROUP_SCHED
 	  See Documentation/scheduler/sched-rt-group.txt for more information.
 
 endif #CGROUP_SCHED
-
-config UCLAMP_TASK_GROUP
-	bool "Utilization clamping per group of tasks"
-	depends on CGROUP_SCHED
-	depends on UCLAMP_TASK
-	default n
-	help
-	  This feature enables the scheduler to track the clamped utilization
-	  of each CPU based on RUNNABLE tasks currently scheduled on that CPU.
-
-	  When this option is enabled, the user can specify a min and max
-	  CPU bandwidth which is allowed for each single task in a group.
-	  The max bandwidth allows to clamp the maximum frequency a task
-	  can use, while the min bandwidth allows to define a minimum
-	  frequency a task will always use.
-
-	  When task group based utilization clamping is enabled, an eventually
-          specified task-specific clamp value is constrained by the cgroup
-	  specified clamp value. Both minimum and maximum task clamping cannot
-          be bigger than the corresponding clamping defined at task group level.
-
-	  If in doubt, say N.
 
 config CGROUP_PIDS
 	bool "PIDs controller"
@@ -1059,18 +960,6 @@ config SOCK_CGROUP_DATA
 	default n
 
 endif # CGROUPS
-
-config CHECKPOINT_RESTORE
-	bool "Checkpoint/restore support" if EXPERT
-	select PROC_CHILDREN
-	default n
-	help
-	  Enables additional kernel features in a sake of checkpoint/restore.
-	  In particular it adds auxiliary prctl codes to setup process text,
-	  data and heap segment sizes, and a few additional /proc filesystem
-	  entries.
-
-	  If unsure, say N here.
 
 menuconfig NAMESPACES
 	bool "Namespaces support" if EXPERT
@@ -1370,6 +1259,19 @@ config SYSCTL_SYSCALL
 
 	  If unsure say N here.
 
+config FHANDLE
+	bool "open by fhandle syscalls" if EXPERT
+	select EXPORTFS
+	default y
+	help
+	  If you say Y here, a user level program will be able to map
+	  file names to handle and then later use the handle for
+	  different file system operations. This is useful in implementing
+	  userspace file servers, which now track files using handles instead
+	  of names. The handle would remain the same even if file names
+	  get renamed. Enables open_by_handle_at(2) and name_to_handle_at(2)
+	  syscalls.
+
 config POSIX_TIMERS
 	bool "Posix Clocks & timers" if EXPERT
 	default y
@@ -1386,54 +1288,6 @@ config POSIX_TIMERS
 	  CLOCK_REALTIME, CLOCK_MONOTONIC and CLOCK_BOOTTIME only.
 
 	  If unsure say y.
-
-config KALLSYMS
-	 bool "Load all symbols for debugging/ksymoops" if EXPERT
-	 default y
-	 help
-	   Say Y here to let the kernel print out symbolic crash information and
-	   symbolic stack backtraces. This increases the size of the kernel
-	   somewhat, as all symbols have to be loaded into the kernel image.
-
-config KALLSYMS_ALL
-	bool "Include all symbols in kallsyms"
-	depends on DEBUG_KERNEL && KALLSYMS
-	help
-	   Normally kallsyms only contains the symbols of functions for nicer
-	   OOPS messages and backtraces (i.e., symbols from the text and inittext
-	   sections). This is sufficient for most cases. And only in very rare
-	   cases (e.g., when a debugger is used) all symbols are required (e.g.,
-	   names of variables from the data sections, etc).
-
-	   This option makes sure that all symbols are loaded into the kernel
-	   image (i.e., symbols from all sections) in cost of increased kernel
-	   size (depending on the kernel configuration, it may be 300KiB or
-	   something like this).
-
-	   Say N unless you really need all symbols.
-
-config KALLSYMS_ABSOLUTE_PERCPU
-	bool
-	depends on KALLSYMS
-	default X86_64 && SMP
-
-config KALLSYMS_BASE_RELATIVE
-	bool "Enable KALLSYMS_BASE_RELATIVE or not"
-	depends on KALLSYMS
-	default !IA64 && !(TILE && 64BIT)
-	help
-	  Instead of emitting them as absolute values in the native word size,
-	  emit the symbol references in the kallsyms table as 32-bit entries,
-	  each containing a relative value in the range [base, base + U32_MAX]
-	  or, when KALLSYMS_ABSOLUTE_PERCPU is in effect, each containing either
-	  an absolute value in the range [0, S32_MAX] or a relative value in the
-	  range [base, base + S32_MAX], where base is the lowest relative symbol
-	  address encountered in the image.
-
-	  On 64-bit builds, this reduces the size of the address table by 50%,
-	  but more importantly, it results in entries whose values are build
-	  time constants, and no relocation pass is required at runtime to fix
-	  up the entries based on the runtime load address of the kernel.
 
 config PRINTK
 	default y
@@ -1542,22 +1396,6 @@ config EVENTFD
 
 	  If unsure, say Y.
 
-# syscall, maps, verifier
-config BPF_SYSCALL
-	bool "Enable bpf() system call"
-	select BPF
-	default n
-	help
-	  Enable the bpf() system call that allows to manipulate eBPF
-	  programs and maps via file descriptors.
-
-config BPF_JIT_ALWAYS_ON
-	bool "Permanently enable BPF JIT and remove BPF interpreter"
-	depends on BPF_SYSCALL && HAVE_EBPF_JIT && BPF_JIT
-	help
-	  Enables BPF JIT and removes BPF interpreter to avoid
-	  speculative execution of BPF instructions by the interpreter
-
 config SHMEM
 	bool "Use full shmem filesystem" if EXPERT
 	default y
@@ -1587,21 +1425,10 @@ config ADVISE_SYSCALLS
 	  applications use these syscalls, you can disable this option to save
 	  space.
 
-config USERFAULTFD
-	bool "Enable userfaultfd() system call"
-	depends on MMU
+config HAVE_ARCH_USERFAULTFD_MINOR
+	bool
 	help
-	  Enable the userfaultfd() system call that allows to intercept and
-	  handle page faults in userland.
-
-config PCI_QUIRKS
-	default y
-	bool "Enable PCI quirk workarounds" if EXPERT
-	depends on PCI
-	help
-	  This enables workarounds for various PCI chipset
-	  bugs/quirks. Disable this only if your target machine is
-	  unaffected by PCI quirks.
+	  Arch has userfaultfd minor fault support
 
 config MEMBARRIER
 	bool "Enable membarrier() system call" if EXPERT
@@ -1614,6 +1441,109 @@ config MEMBARRIER
 	  compiler barrier.
 
 	  If unsure, say Y.
+
+config CHECKPOINT_RESTORE
+	bool "Checkpoint/restore support" if EXPERT
+	select PROC_CHILDREN
+	default n
+	help
+	  Enables additional kernel features in a sake of checkpoint/restore.
+	  In particular it adds auxiliary prctl codes to setup process text,
+	  data and heap segment sizes, and a few additional /proc filesystem
+	  entries.
+
+	  If unsure, say N here.
+
+config KALLSYMS
+	 bool "Load all symbols for debugging/ksymoops" if EXPERT
+	 default y
+	 help
+	   Say Y here to let the kernel print out symbolic crash information and
+	   symbolic stack backtraces. This increases the size of the kernel
+	   somewhat, as all symbols have to be loaded into the kernel image.
+
+config KALLSYMS_ALL
+	bool "Include all symbols in kallsyms"
+	depends on DEBUG_KERNEL && KALLSYMS
+	help
+	   Normally kallsyms only contains the symbols of functions for nicer
+	   OOPS messages and backtraces (i.e., symbols from the text and inittext
+	   sections). This is sufficient for most cases. And only in very rare
+	   cases (e.g., when a debugger is used) all symbols are required (e.g.,
+	   names of variables from the data sections, etc).
+
+	   This option makes sure that all symbols are loaded into the kernel
+	   image (i.e., symbols from all sections) in cost of increased kernel
+	   size (depending on the kernel configuration, it may be 300KiB or
+	   something like this).
+
+	   Say N unless you really need all symbols.
+
+config KALLSYMS_ABSOLUTE_PERCPU
+	bool
+	depends on KALLSYMS
+	default X86_64 && SMP
+
+config KALLSYMS_BASE_RELATIVE
+	bool
+	depends on KALLSYMS
+	default !IA64 && !(TILE && 64BIT)
+	help
+	  Instead of emitting them as absolute values in the native word size,
+	  emit the symbol references in the kallsyms table as 32-bit entries,
+	  each containing a relative value in the range [base, base + U32_MAX]
+	  or, when KALLSYMS_ABSOLUTE_PERCPU is in effect, each containing either
+	  an absolute value in the range [0, S32_MAX] or a relative value in the
+	  range [base, base + S32_MAX], where base is the lowest relative symbol
+	  address encountered in the image.
+
+	  On 64-bit builds, this reduces the size of the address table by 50%,
+	  but more importantly, it results in entries whose values are build
+	  time constants, and no relocation pass is required at runtime to fix
+	  up the entries based on the runtime load address of the kernel.
+
+# end of the "standard kernel features (expert users)" menu
+
+# syscall, maps, verifier
+config BPF_SYSCALL
+	bool "Enable bpf() system call"
+	select BPF
+	select IRQ_WORK
+	default n
+	help
+	  Enable the bpf() system call that allows to manipulate eBPF
+	  programs and maps via file descriptors.
+
+config ARCH_WANT_DEFAULT_BPF_JIT
+	bool
+
+config BPF_JIT_ALWAYS_ON
+	bool "Permanently enable BPF JIT and remove BPF interpreter"
+	depends on BPF_SYSCALL && HAVE_EBPF_JIT && BPF_JIT
+	help
+	  Enables BPF JIT and removes BPF interpreter to avoid
+	  speculative execution of BPF instructions by the interpreter
+
+config BPF_UNPRIV_DEFAULT_OFF
+	bool "Disable unprivileged BPF by default"
+	depends on BPF_SYSCALL
+	help
+	  Disables unprivileged BPF by default by setting the corresponding
+	  /proc/sys/kernel/unprivileged_bpf_disabled knob to 2. An admin can
+	  still reenable it by setting it to 0 later on, or permanently
+	  disable it by setting it to 1 (from which no other transition to
+	  0 is possible anymore).
+
+config BPF_JIT_DEFAULT_ON
+	def_bool ARCH_WANT_DEFAULT_BPF_JIT || BPF_JIT_ALWAYS_ON
+	depends on HAVE_EBPF_JIT && BPF_JIT
+
+config USERFAULTFD
+	bool "Enable userfaultfd() system call"
+	depends on MMU
+	help
+	  Enable the userfaultfd() system call that allows to intercept and
+	  handle page faults in userland.
 
 config EMBEDDED
 	bool "Embedded system"

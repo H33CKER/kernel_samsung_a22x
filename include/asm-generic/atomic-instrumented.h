@@ -84,10 +84,10 @@ static __always_inline bool atomic64_try_cmpxchg(atomic64_t *v, s64 *old, s64 ne
 }
 #endif
 
-static __always_inline int __atomic_add_unless(atomic_t *v, int a, int u)
+static __always_inline int atomic_fetch_add_unless(atomic_t *v, int a, int u)
 {
 	kasan_check_write(v, sizeof(*v));
-	return __arch_atomic_add_unless(v, a, u);
+	return arch_atomic_fetch_add_unless(v, a, u);
 }
 
 
@@ -205,7 +205,7 @@ static __always_inline s64 atomic64_dec_return(atomic64_t *v)
 	return arch_atomic64_dec_return(v);
 }
 
-static __always_inline s64 atomic64_inc_not_zero(atomic64_t *v)
+static __always_inline bool atomic64_inc_not_zero(atomic64_t *v)
 {
 	kasan_check_write(v, sizeof(*v));
 	return arch_atomic64_inc_not_zero(v);
