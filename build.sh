@@ -85,10 +85,16 @@ set_toolchain() {
         log "$green Toolchain found at $TOOLCHAIN_DIR $nocol"
     fi
 
-    # Export Clang and cross-compile variables
+    # Export Clang and LLVM variables for pure Clang build
     export PATH="$TOOLCHAIN_DIR/bin:$PATH"
     export CC=clang
-    export CROSS_COMPILE=aarch64-linux-android-
+    export LD=ld.lld
+    export AR=llvm-ar
+    export NM=llvm-nm
+    export OBJDUMP=llvm-objdump
+    export STRIP=llvm-strip
+    export OBJCOPY=llvm-objcopy
+    export CROSS_COMPILE=
     export CROSS_COMPILE_ARM32=arm-linux-androideabi-
 
     log "$blue Using compiler: $(which clang) $nocol"
