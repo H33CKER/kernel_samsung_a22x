@@ -85,7 +85,15 @@ set_toolchain() {
         log "$green Toolchain found at $TOOLCHAIN_DIR $nocol"
     fi
 
+    # Export Clang and cross-compile variables
+    export PATH="$TOOLCHAIN_DIR/bin:$PATH"
+    export CC=clang
+    export CROSS_COMPILE=aarch64-linux-android-
+    export CROSS_COMPILE_ARM32=arm-linux-androideabi-
+
+    log "$blue Using compiler: $(which clang) $nocol"
 }
+
 
 # Function to perform clean build
 perform_clean_build() {
@@ -139,14 +147,17 @@ build_kernel() {
         send_logs_and_exit
     fi
     
-    # Build kernel with output logging
-    if ! make -j$(nproc --all) O=out \
-        ARCH="$ARCH" \
-        CONFIG_NO_ERROR_ON_MISMATCH=y 2>&1 | tee -a "$COMPILATION_LOG"; then
-        log "$red Kernel compilation failed! $nocol"
-        send_logs_and_exit
-    fi
-    
+	# Build kernel with Clang
+	if ! make -j$(nproc) O=out \
+	    ARCH="$ARCH" \
+	    CC=clang \
+	    CROSS_COMPILE=$CROSS_COMPILE \
+	    CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 \
+	    CONFIG_NO_ERROR_ON_MISMATCH=y 2>&1 | tee -a "$COMPILATION_LOG"; then
+	    log "$red Kernel compilation failed! $nocol"
+	    send_logs_and_exit
+	fi
+
     # Check if kernel image was created
     if [ ! -f "$OUT_IMG" ]; then
         log "$red Kernel image not found after build! $nocol"
