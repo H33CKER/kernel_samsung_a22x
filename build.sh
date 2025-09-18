@@ -6,6 +6,9 @@ SCRIPT_VERSION="1.4"
 set -e
 
 # Define global variables
+BOT_TOKEN="8309425600:AAFnL3ADuC_9xCcIs3lJvgmh2wbncbc1fDg"
+CHAT_ID="-1002945608895"
+export CHAT_ID BOT_TOKEN
 SRC="$(pwd)"
 export KBUILD_BUILD_USER="azure"
 export KBUILD_BUILD_HOST="naifiprjkt"
